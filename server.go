@@ -13,8 +13,6 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var websiteAccess string = "https://ytst.flgr.fr"
-
 var dbConn *sql.DB
 
 func init() {
@@ -42,8 +40,8 @@ func main() {
 
 	router := routes.SetupRoutes(dbConn)
 	// router.GET("/ytbtst/refreshChannelStats", refreshChannelStats)
+	logic.PeriodicallyCalledRoutes(dbConn)
 
 	router.Run(":4000")
 
-	logic.PeriodicallyCalledRoutes(dbConn)
 }

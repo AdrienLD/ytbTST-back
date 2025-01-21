@@ -9,12 +9,15 @@ import (
 	"strconv"
 	"time"
 	"ytst-back/config"
+	"ytst-back/db"
 	"ytst-back/youtube"
 )
 
 func PeriodicallyCalledRoutes(db *sql.DB) {
+	fmt.Println("Appels périodiques des routes...")
+	callRoutePeriodically(updateAllChannelStats, 2*time.Hour, db)
+	//callRoutePeriodically(autoCheckNewVideos, 2*time.Hour, db)
 	callRoutePeriodically(refreshWithFrequency, 2*time.Hour, db)
-	callRoutePeriodically(updateAllChannelStats, 15*time.Second, db)
 }
 
 func mapToStruct(data interface{}, result interface{}) error {
@@ -25,7 +28,7 @@ func mapToStruct(data interface{}, result interface{}) error {
 	return json.Unmarshal(bytes, result)
 }
 
-func YtstResearch(searchValue string) (map[string]interface{}, error) {
+func YtstResearch(dbConn *sql.DB, searchValue string) (map[string]interface{}, error) {
 
 	data, err := youtube.YouTubeAPIRequest("search", map[string]string{
 		"part": "snippet",
@@ -34,6 +37,45 @@ func YtstResearch(searchValue string) (map[string]interface{}, error) {
 
 	if err != nil {
 		return nil, fmt.Errorf("Erreur lors de l'appel à l'API YouTube pour searchValue '%s': %v", searchValue, err)
+	}
+
+	var channelIDs, videoIDs []string
+
+	for _, item := range data["items"].([]interface{}) {
+		itMap := item.(map[string]interface{})
+		idPart := itMap["id"].(map[string]interface{})
+
+		kind := idPart["kind"].(string)
+		switch kind {
+		case "youtube#channel":
+			ch := idPart["channelId"].(string)
+			channelIDs = append(channelIDs, ch)
+		case "youtube#video":
+			vid := idPart["videoId"].(string)
+			videoIDs = append(videoIDs, vid)
+		}
+	}
+
+	channelsMap, err := db.AreChannelsInBDD(dbConn, channelIDs)
+	videosMap, err := db.AreVideosInBDD(dbConn, videoIDs)
+	if err != nil {
+		return nil, fmt.Errorf("Erreur lors de la recherche des chaînes en base de données : %v", err)
+	}
+
+	for _, item := range data["items"].([]interface{}) {
+		itMap := item.(map[string]interface{})
+		idPart := itMap["id"].(map[string]interface{})
+		kind := idPart["kind"].(string)
+
+		switch kind {
+		case "youtube#channel":
+			ch := idPart["channelId"].(string)
+			// On ajoute un champ dans le snippet ou n’importe où
+			itMap["existsInDB"] = channelsMap[ch]
+		case "youtube#video":
+			vid := idPart["videoId"].(string)
+			itMap["existsInDB"] = videosMap[vid]
+		}
 	}
 
 	return data, nil
@@ -62,7 +104,16 @@ func AddChannel(db *sql.DB, channelId string) error {
 		VALUES ($1, $2, $3, $4, $5, $6, $7);
 	`
 
-	if _, err := db.Exec(query, channel.ID, snippet.Title, snippet.Description, snippet.Thumbnails.Default.URL, snippet.Country, snippet.CustomURL, snippet.CreatedDate); err != nil {
+	var bestThumbnail string
+	if channel.Snippet.Thumbnails.High.URL != "" {
+		bestThumbnail = channel.Snippet.Thumbnails.High.URL
+	} else if channel.Snippet.Thumbnails.Medium.URL != "" {
+		bestThumbnail = channel.Snippet.Thumbnails.Medium.URL
+	} else {
+		bestThumbnail = channel.Snippet.Thumbnails.Default.URL
+	}
+
+	if _, err := db.Exec(query, channel.ID, snippet.Title, snippet.Description, bestThumbnail, snippet.Country, snippet.CustomURL, snippet.CreatedDate); err != nil {
 		return fmt.Errorf("Erreur lors de l'insertion en base de données : %v", err)
 	}
 
@@ -119,6 +170,7 @@ func refreshChannelStats(db *sql.DB, channelId string) {
 }
 
 func updateAllChannelStats(db *sql.DB, _ time.Duration) {
+	fmt.Println("Mise à jour des statistiques de toutes les chaînes...")
 	rows, err := db.Query(`SELECT channel_id FROM channels`)
 	if err != nil {
 		log.Fatalf("Erreur lors de la récupération des chaînes : %v", err)
@@ -161,44 +213,20 @@ func recuperateChannelFromDB(db *sql.DB, channelId string) (int, error) {
 	return dbChannelID, nil
 }
 
-func CheckNewVideos(db *sql.DB, channelId string) error {
-	channelDBId, err := recuperateChannelFromDB(db, channelId)
-	if err != nil {
-		return fmt.Errorf("Erreur lors de la récupération de l'ID de la chaîne : %v\n", err)
-	}
-
-	data, err := youtube.YouTubeAPIRequest("search", map[string]string{
-		"part":       "snippet",
-		"channelId":  channelId,
-		"maxResults": "5",
-		"order":      "date",
-		"type":       "video",
-	})
-
-	if err != nil {
-		return fmt.Errorf("Erreur lors de l'appel à l'API YouTube pour channel_id '%s': %v\n", channelId, err)
-	}
-
-	for _, item := range data["items"].([]interface{}) {
-		snippet := item.(map[string]interface{})["snippet"].(map[string]interface{})
-		id := item.(map[string]interface{})["id"].(map[string]interface{})
-		if snippet["publishedAt"].(string) > "2025-01-10T00:00:00Z" {
-			err := addNewVideo(db, id["videoId"].(string), channelDBId)
-			if err != nil {
-				return fmt.Errorf("Erreur lors de l'ajout de la vidéo : %v\n", err)
-			}
-		}
-	}
-
-	return nil
-}
-
-func addNewVideo(db *sql.DB, videoId string, channelId int) error {
+func AddNewVideo(db *sql.DB, videoId string, channelId string) error {
 	data, err := youtube.YouTubeAPIRequest("videos", map[string]string{
 		"part":       "snippet",
 		"id":         videoId,
 		"maxResults": "1",
 	})
+	if err != nil {
+		return fmt.Errorf("Erreur lors de l'appel à l'API YouTube pour video_id '%s': %v\n", videoId, err)
+	}
+
+	query := `SELECT id FROM channels WHERE channel_id = $1;`
+	var dbChannelID int
+	err = db.QueryRow(query, channelId).Scan(&dbChannelID)
+
 	if err != nil {
 		return fmt.Errorf("Erreur lors de l'appel à l'API YouTube pour video_id '%s': %v\n", videoId, err)
 	}
@@ -211,21 +239,44 @@ func addNewVideo(db *sql.DB, videoId string, channelId int) error {
 	var isaShort bool = isShort(videoId)
 
 	video := videoData.Items[0]
-	query := `
+	query = `
 		INSERT INTO videos (video_id, channel_id, title, description, published_at, thumbnail_url, is_short)
 		VALUES ($1, $2, $3, $4, $5, $6, $7);
 	`
 
-	_, err = db.Exec(query, video.ID, channelId, video.Snippet.Title, video.Snippet.Description, video.Snippet.PublishedAt, video.Snippet.Thumbnails.Default.URL, isaShort)
+	var bestThumbnail string
+	if video.Snippet.Thumbnails.High.URL != "" {
+		bestThumbnail = video.Snippet.Thumbnails.High.URL
+	} else if video.Snippet.Thumbnails.Medium.URL != "" {
+		bestThumbnail = video.Snippet.Thumbnails.Medium.URL
+	} else {
+		bestThumbnail = video.Snippet.Thumbnails.Default.URL
+	}
+
+	_, err = db.Exec(query, video.ID, dbChannelID, video.Snippet.Title, video.Snippet.Description, video.Snippet.PublishedAt, bestThumbnail, isaShort)
 	if err != nil {
 		return fmt.Errorf("Erreur lors de l'insertion des statistiques en base pour channel_id '%s': %v\n", video.ID, err)
 	}
+
+	query = `SELECT id FROM videos WHERE video_id = $1;`
+
+	result, err := db.Exec(query, video.ID)
+	if err != nil {
+		return fmt.Errorf("Erreur lors de la récupération de l'ID de la vidéo : %v\n", err)
+	}
+
+	lastInsertId, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("Erreur lors de la récupération de l'ID inséré : %v\n", err)
+	}
+
+	ScanVideoStats(db, strconv.FormatInt(lastInsertId, 10), videoId)
 
 	return nil
 }
 
 func isShort(videoId string) bool {
-	data, _ := youtube.YouTubeAPIRequest("videos", map[string]string{
+	data, err := youtube.YouTubeAPIRequest("videos", map[string]string{
 		"part":       "contentDetails",
 		"id":         videoId,
 		"maxResults": "1",
@@ -238,18 +289,34 @@ func isShort(videoId string) bool {
 	}
 
 	duration := videoContentDetails.Items[0].ContentDetails.Duration
-	re := regexp.MustCompile(`PT(?P<minutes>\d+)M(?P<seconds>\d+)S`)
+	re := regexp.MustCompile(`PT(?:(\d+)M)?(?:(\d+)S)?`)
 	matches := re.FindStringSubmatch(duration)
-	minutesInt, err := strconv.Atoi(matches[1])
-	if err != nil || len(matches) < 2 {
+	if len(matches) == 0 {
+		fmt.Printf("Durée non reconnue pour la vidéo ID %s : %s\n", videoId, duration)
 		return false
-	}
-	if minutesInt < 1 {
-		return false
-	} else {
-		return true
 	}
 
+	minutesInt, secondsInt := 0, 0
+	if matches[1] != "" {
+		minutesInt, err = strconv.Atoi(matches[1])
+		if err != nil {
+			fmt.Printf("Erreur lors de la conversion des minutes : %v\n", err)
+			return false
+		}
+	}
+	if matches[2] != "" {
+		secondsInt, err = strconv.Atoi(matches[2])
+		if err != nil {
+			fmt.Printf("Erreur lors de la conversion des secondes : %v\n", err)
+			return false
+		}
+	}
+
+	// Déterminer si la vidéo est un "short"
+	if minutesInt < 1 && secondsInt <= 60 {
+		return true
+	}
+	return false
 }
 
 func refreshWithFrequency(db *sql.DB, frequency time.Duration) {

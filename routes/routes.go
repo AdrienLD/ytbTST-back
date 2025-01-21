@@ -2,8 +2,13 @@ package routes
 
 import (
 	"database/sql"
+	"encoding/xml"
+	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"ytst-back/config"
+	"ytst-back/db"
 	"ytst-back/logic"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +34,11 @@ func SetupRoutes(db *sql.DB) *gin.Engine {
 	})
 	router.GET("/ytbtst/research", ytstResearch)
 	router.GET("/ytbtst/addChannel", addChannel)
-	router.GET("/ytbtst/checkNewVideos", checkNewVideos)
+	// router.GET("/ytbtst/checkNewVideos", checkNewVideos)
+	router.GET("/youtube/callback", handleYouTubeHubChallenge)
+	router.POST("/youtube/callback", handleYouTubeNotification)
+	router.GET("/ytbtst/channelInfo", channelInfo)
+	router.GET("/ytbtst/channelStats", channelStats)
 
 	dbConn = db
 	return router
@@ -42,7 +51,7 @@ func ytstResearch(c *gin.Context) {
 		return
 	}
 
-	data, err := logic.YtstResearch(searchValue)
+	data, err := logic.YtstResearch(dbConn, searchValue)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -51,33 +60,109 @@ func ytstResearch(c *gin.Context) {
 	c.JSON(http.StatusOK, data)
 }
 
+func handleYouTubeHubChallenge(c *gin.Context) {
+	mode := c.Query("hub.mode")
+	challenge := c.Query("hub.challenge")
+
+	if mode == "subscribe" {
+		c.String(http.StatusOK, challenge)
+		return
+	}
+
+	c.Status(http.StatusOK)
+}
+
+func handleYouTubeNotification(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot read body"})
+		return
+	}
+	var notification config.Feed
+	if err := xml.Unmarshal(body, &notification); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot bind json"})
+		return
+	}
+
+	if len(notification.Entry) == 0 {
+		fmt.Println("Aucune entrée reçue dans la notification YouTube")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No entries found in notification"})
+		return
+	}
+
+	err = logic.AddNewVideo(dbConn, notification.Entry[0].VideoId, notification.Entry[0].ChannelId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusOK)
+}
+
 func addChannel(c *gin.Context) {
 	channelId := c.Query("channelId")
 	if channelId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'channelId' est requis"})
-		return
 	}
+
 	err := logic.AddChannel(dbConn, channelId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Chaîne ajoutée avec succès", "channel": channelId})
 
+	hubURL := "https://pubsubhubbub.appspot.com/subscribe"
+
+	topicURL := "https://www.youtube.com/xml/feeds/videos.xml?channel_id=" + channelId
+
+	form := url.Values{}
+	form.Add("hub.mode", "subscribe")
+	form.Add("hub.topic", topicURL)
+	form.Add("hub.callback", "https://ytst.flgr.fr/youtube/callback")
+	form.Add("hub.lease_seconds", "864000")
+	form.Add("hub.verify", "async")
+	form.Add("hub.verify_token", "un_token_secret")
+
+	resp, err := http.PostForm(hubURL, form)
+	if err != nil {
+		fmt.Errorf("erreur subscribe: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Errorf("status: %d, body: %s", resp.StatusCode, body)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Abonnement en cours"})
 }
 
-func checkNewVideos(c *gin.Context) {
+func channelInfo(c *gin.Context) {
 	channelId := c.Query("channelId")
 	if channelId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'channelId' est requis"})
-		return
 	}
-	err := logic.CheckNewVideos(dbConn, channelId)
 
+	data, err := db.ChannelInfo(dbConn, channelId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Vidéos ajoutées avec succès"})
+	c.JSON(http.StatusOK, data)
+}
+
+func channelStats(c *gin.Context) {
+	channelId := c.Query("channelId")
+	if channelId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'channelId' est requis"})
+	}
+
+	data, err := db.ChannelStats(dbConn, channelId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
 }

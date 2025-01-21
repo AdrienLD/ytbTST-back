@@ -25,6 +25,12 @@ type YouTubeChannel struct {
 				Default struct {
 					URL string `json:"url"`
 				} `json:"default"`
+				Medium struct {
+					URL string `json:"url"`
+				} `json:"medium"`
+				High struct {
+					URL string `json:"url"`
+				} `json:"high"`
 			} `json:"thumbnails"`
 		} `json:"snippet"`
 	} `json:"items"`
@@ -53,6 +59,12 @@ type YouTubeVideo struct {
 				Default struct {
 					URL string `json:"url"`
 				} `json:"default"`
+				Medium struct {
+					URL string `json:"url"`
+				} `json:"medium"`
+				High struct {
+					URL string `json:"url"`
+				} `json:"high"`
 			} `json:"thumbnails"`
 		} `json:"snippet"`
 	} `json:"items"`
@@ -76,4 +88,32 @@ type YouTubeVideoContentDetails struct {
 			Duration string `json:"duration"`
 		} `json:"contentDetails"`
 	} `json:"items"`
+}
+
+type Feed struct {
+	Entry []struct {
+		ChannelId string `xml:"channelId" xml:"http://www.youtube.com/xml/schemas/2015 channelId"`
+		VideoId   string `xml:"videoId" xml:"http://www.youtube.com/xml/schemas/2015 videoId"`
+	} `xml:"entry"`
+}
+
+type Channel struct {
+	ID           int    `json:"id"`
+	ChannelID    string `json:"channel_id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	ThumbnailURL string `json:"thumbnail_url"`
+	Country      string `json:"country"`
+	CustomURL    string `json:"custom_url"`
+	CreatedAt    string `json:"created_at"`
+	AddedAt      string `json:"added_at"`
+}
+
+type ChannelStats struct {
+	ID              int    `json:"id"`
+	ChannelID       string `json:"channel_id"`
+	SubscriberCount string `json:"subscribers_count"`
+	ViewsCount      string `json:"views_count"`
+	VideoCount      string `json:"video_count"`
+	RecordedAt      string `json:"recorded_at"`
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-var WebsiteAccess string = "https://ytst.flgr.fr"
+var WebsiteAccess string = "http://localhost:3000"
 
 func Load() (*Config, error) {
 	// Charger le fichier .env, si présent
@@ -17,6 +17,8 @@ func Load() (*Config, error) {
 		DBUser: os.Getenv("DB_USER"),
 		DBPass: os.Getenv("DB_PASS"),
 		DBName: os.Getenv("DB_NAME"),
+		DBHost: os.Getenv("DB_HOST"),
+		DBPort: os.Getenv("DB_PORT"),
 		DBSSL:  "disable",
 
 		YouTubeAPIKey: os.Getenv("GOOGLE_API_KEY"),
