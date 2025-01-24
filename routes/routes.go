@@ -40,6 +40,7 @@ func SetupRoutes(db *sql.DB) *gin.Engine {
 	router.GET("/ytbtst/channelInfo", channelInfo)
 	router.GET("/ytbtst/channelStats", channelStats)
 	router.GET("/ytbtst/videosFromChannel", videosFromChannel)
+	router.GET("/ytbtst/videoInfo", videoInfo)
 
 	dbConn = db
 	return router
@@ -175,6 +176,21 @@ func videosFromChannel(c *gin.Context) {
 	}
 
 	data, err := db.VideosFromChannel(dbConn, channelId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
+}
+
+func videoInfo(c *gin.Context) {
+	videoId := c.Query("videoId")
+	if videoId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'videoId' est requis"})
+	}
+
+	data, err := db.VideoInfo(dbConn, videoId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

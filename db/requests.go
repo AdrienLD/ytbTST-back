@@ -136,3 +136,23 @@ func VideosFromChannel(db *sql.DB, channelID string) ([]config.Video, error) {
 	}
 	return videos, nil
 }
+
+func VideoInfo(db *sql.DB, videoID string) (config.Video, error) {
+	var video config.Video
+	err := db.QueryRow("SELECT * FROM videos WHERE video_id = $1", videoID).Scan(
+		&video.ID,
+		&video.VideoID,
+		&video.IsShort,
+		&video.ChannelID,
+		&video.Title,
+		&video.Description,
+		&video.PublishedAt,
+		&video.ThumbnailURL,
+		&video.AddedAt,
+		&video.Frequency,
+	)
+	if err != nil {
+		return video, err
+	}
+	return video, nil
+}
