@@ -130,3 +130,16 @@ type Video struct {
 	AddedAt      string `json:"added_at"`
 	Frequency    string `json:"refreshed_frequency"`
 }
+
+type VideoStats struct {
+	ID            int    `json:"id"`
+	VideoID       string `json:"video_id"`
+	ViewsCount    string `json:"views_count"`
+	LikesCount    string `json:"likes_count"`
+	CommentsCount string `json:"comments_count"`
+	RecordedAt    string `json:"recorded_at"`
+}
+
+type AddChannelRequest struct {
+	ChannelID string `json:"channelId"`
+}

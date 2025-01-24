@@ -88,11 +88,13 @@ func AddChannel(db *sql.DB, channelId string) error {
 	})
 
 	if err != nil {
+		fmt.Printf("Erreur lors de l'appel à l'API YouTube pour channel_id '%s': %v\n", channelId, err)
 		return fmt.Errorf("Erreur lors de l'appel à l'API YouTube pour channel_id '%s': %v", channelId, err)
 	}
 
 	var channelData config.YouTubeChannel
 	if err := mapToStruct(data, &channelData); err != nil {
+		fmt.Printf("Erreur lors du traitement des données de la chaîne : %v\n", err)
 		return fmt.Errorf("Erreur lors du traitement des données de la chaîne : %v", err)
 	}
 
@@ -101,7 +103,8 @@ func AddChannel(db *sql.DB, channelId string) error {
 
 	query := `
 		INSERT INTO channels (channel_id, name, description, thumbnail_url, country, custom_url, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7);
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id;
 	`
 
 	var bestThumbnail string
@@ -113,9 +116,14 @@ func AddChannel(db *sql.DB, channelId string) error {
 		bestThumbnail = channel.Snippet.Thumbnails.Default.URL
 	}
 
-	if _, err := db.Exec(query, channel.ID, snippet.Title, snippet.Description, bestThumbnail, snippet.Country, snippet.CustomURL, snippet.CreatedDate); err != nil {
+	_, err = db.Query(query, channel.ID, snippet.Title, snippet.Description, bestThumbnail, snippet.Country, snippet.CustomURL, snippet.CreatedDate)
+	if err != nil {
+		fmt.Printf("Erreur lors de l'insertion en base de données : %v\n", err)
 		return fmt.Errorf("Erreur lors de l'insertion en base de données : %v", err)
 	}
+
+	fmt.Printf("Chaîne ajoutée avec succès pour channel_id '%s' avec l'ID '%s'.\n", channelId)
+	refreshChannelStats(db, channel.ID)
 
 	return nil
 }
@@ -241,7 +249,8 @@ func AddNewVideo(db *sql.DB, videoId string, channelId string) error {
 	video := videoData.Items[0]
 	query = `
 		INSERT INTO videos (video_id, channel_id, title, description, published_at, thumbnail_url, is_short)
-		VALUES ($1, $2, $3, $4, $5, $6, $7);
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id;
 	`
 
 	var bestThumbnail string
@@ -253,24 +262,15 @@ func AddNewVideo(db *sql.DB, videoId string, channelId string) error {
 		bestThumbnail = video.Snippet.Thumbnails.Default.URL
 	}
 
-	_, err = db.Exec(query, video.ID, dbChannelID, video.Snippet.Title, video.Snippet.Description, video.Snippet.PublishedAt, bestThumbnail, isaShort)
+	var id string
+	err = db.QueryRow(query, video.ID, dbChannelID, video.Snippet.Title, video.Snippet.Description, video.Snippet.PublishedAt, bestThumbnail, isaShort).Scan(&id)
 	if err != nil {
+		fmt.Printf("Erreur lors de l'insertion en base de données : %v\n", err)
 		return fmt.Errorf("Erreur lors de l'insertion des statistiques en base pour channel_id '%s': %v\n", video.ID, err)
 	}
 
-	query = `SELECT id FROM videos WHERE video_id = $1;`
-
-	result, err := db.Exec(query, video.ID)
-	if err != nil {
-		return fmt.Errorf("Erreur lors de la récupération de l'ID de la vidéo : %v\n", err)
-	}
-
-	lastInsertId, err := result.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("Erreur lors de la récupération de l'ID inséré : %v\n", err)
-	}
-
-	ScanVideoStats(db, strconv.FormatInt(lastInsertId, 10), videoId)
+	fmt.Printf("Vidéo ajoutée avec succès pour video_id '%s' avec l'ID '%s'.\n", videoId, id)
+	ScanVideoStats(db, id, videoId)
 
 	return nil
 }
@@ -281,6 +281,10 @@ func isShort(videoId string) bool {
 		"id":         videoId,
 		"maxResults": "1",
 	})
+	if err != nil {
+		fmt.Printf("Erreur lors de l'appel à l'API YouTube pour video_id '%s': %v\n", videoId, err)
+		return false
+	}
 
 	var videoContentDetails config.YouTubeVideoContentDetails
 	if err := mapToStruct(data, &videoContentDetails); err != nil {
@@ -312,7 +316,7 @@ func isShort(videoId string) bool {
 		}
 	}
 
-	// Déterminer si la vidéo est un "short"
+	fmt.Printf("minutes et secondes %d %d\n", minutesInt, secondsInt)
 	if minutesInt < 1 && secondsInt <= 60 {
 		return true
 	}
@@ -342,6 +346,7 @@ func refreshWithFrequency(db *sql.DB, frequency time.Duration) {
 }
 
 func ScanVideoStats(db *sql.DB, id string, videoId string) {
+	fmt.Printf("Mise à jour des statistiques pour video_id '%s'...\n", videoId)
 	data, err := youtube.YouTubeAPIRequest("videos", map[string]string{
 		"part": "statistics",
 		"id":   videoId,

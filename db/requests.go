@@ -156,3 +156,106 @@ func VideoInfo(db *sql.DB, videoID string) (config.Video, error) {
 	}
 	return video, nil
 }
+
+func VideoStats(db *sql.DB, videoID string) ([]config.VideoStats, error) {
+
+	var id int
+	err := db.QueryRow("SELECT id FROM videos WHERE video_id = $1", videoID).Scan(&id)
+	if err != nil {
+		return nil, err
+	}
+
+	var statsList []config.VideoStats
+	rows, err := db.Query("SELECT * FROM video_stats WHERE video_id = $1", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var stats config.VideoStats
+		if err := rows.Scan(
+			&stats.ID,
+			&stats.VideoID,
+			&stats.ViewsCount,
+			&stats.LikesCount,
+			&stats.CommentsCount,
+			&stats.RecordedAt,
+		); err != nil {
+			return nil, err
+		}
+		statsList = append(statsList, stats)
+
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return statsList, nil
+}
+
+func RecuperateLastFollowedChannels(db *sql.DB) ([]config.Channel, error) {
+	var channels []config.Channel
+	rows, err := db.Query("SELECT * FROM channels ORDER BY added_at DESC LIMIT 10")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var channel config.Channel
+		if err := rows.Scan(
+			&channel.ID,
+			&channel.ChannelID,
+			&channel.Name,
+			&channel.Description,
+			&channel.ThumbnailURL,
+			&channel.Country,
+			&channel.CustomURL,
+			&channel.CreatedAt,
+			&channel.AddedAt,
+		); err != nil {
+			return nil, err
+		}
+		channels = append(channels, channel)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return channels, nil
+}
+
+func RecuperateLastFollowedVideos(db *sql.DB) ([]config.Video, error) {
+	var videos []config.Video
+	rows, err := db.Query("SELECT * FROM videos ORDER BY added_at DESC LIMIT 10")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var video config.Video
+		if err := rows.Scan(
+			&video.ID,
+			&video.VideoID,
+			&video.IsShort,
+			&video.ChannelID,
+			&video.Title,
+			&video.Description,
+			&video.PublishedAt,
+			&video.ThumbnailURL,
+			&video.AddedAt,
+			&video.Frequency,
+		); err != nil {
+			return nil, err
+		}
+		videos = append(videos, video)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return videos, nil
+}

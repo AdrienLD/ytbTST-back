@@ -33,7 +33,7 @@ func SetupRoutes(db *sql.DB) *gin.Engine {
 		c.Next()
 	})
 	router.GET("/ytbtst/research", ytstResearch)
-	router.GET("/ytbtst/addChannel", addChannel)
+	router.POST("/ytbtst/addChannel", addChannel)
 	// router.GET("/ytbtst/checkNewVideos", checkNewVideos)
 	router.GET("/youtube/callback", handleYouTubeHubChallenge)
 	router.POST("/youtube/callback", handleYouTubeNotification)
@@ -41,6 +41,9 @@ func SetupRoutes(db *sql.DB) *gin.Engine {
 	router.GET("/ytbtst/channelStats", channelStats)
 	router.GET("/ytbtst/videosFromChannel", videosFromChannel)
 	router.GET("/ytbtst/videoInfo", videoInfo)
+	router.GET("/ytbtst/videoStats", videoStats)
+	router.GET("/ytbtst/recuperateLastFollowedChannels", recuperateLastFollowedChannels)
+	router.GET("/ytbtst/recuperateLastFollowedVideos", recuperateLastFollowedVideos)
 
 	dbConn = db
 	return router
@@ -102,11 +105,14 @@ func handleYouTubeNotification(c *gin.Context) {
 }
 
 func addChannel(c *gin.Context) {
-	channelId := c.Query("channelId")
-	if channelId == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'channelId' est requis"})
+	var req config.AddChannelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
 	}
 
+	channelId := req.ChannelID
+	fmt.Println("channelId", channelId)
 	err := logic.AddChannel(dbConn, channelId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -191,6 +197,41 @@ func videoInfo(c *gin.Context) {
 	}
 
 	data, err := db.VideoInfo(dbConn, videoId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
+}
+
+func videoStats(c *gin.Context) {
+	videoId := c.Query("videoId")
+	if videoId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'videoId' est requis"})
+	}
+
+	data, err := db.VideoStats(dbConn, videoId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
+}
+
+func recuperateLastFollowedChannels(c *gin.Context) {
+	data, err := db.RecuperateLastFollowedChannels(dbConn)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
+}
+
+func recuperateLastFollowedVideos(c *gin.Context) {
+	data, err := db.RecuperateLastFollowedVideos(dbConn)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
