@@ -117,3 +117,16 @@ type ChannelStats struct {
 	VideoCount      string `json:"video_count"`
 	RecordedAt      string `json:"recorded_at"`
 }
+
+type Video struct {
+	ID           int    `json:"id"`
+	VideoID      string `json:"video_id"`
+	IsShort      bool   `json:"is_short"`
+	ChannelID    string `json:"channel_id"`
+	Title        string `json:"title"`
+	Description  string `json:"description"`
+	PublishedAt  string `json:"published_at"`
+	ThumbnailURL string `json:"thumbnail_url"`
+	AddedAt      string `json:"added_at"`
+	Frequency    string `json:"refreshed_frequency"`
+}

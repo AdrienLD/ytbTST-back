@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"fmt"
 	"ytst-back/config"
 
 	"github.com/lib/pq"
@@ -70,15 +69,12 @@ func ChannelStats(db *sql.DB, channelID string) ([]config.ChannelStats, error) {
 		return nil, err
 	}
 
-	fmt.Println("id", id)
 	var statsList []config.ChannelStats
 	rows, err := db.Query("SELECT * FROM channel_stats WHERE channel_id = $1", id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	fmt.Println("rows", rows)
 
 	for rows.Next() {
 		var stats config.ChannelStats
@@ -100,4 +96,43 @@ func ChannelStats(db *sql.DB, channelID string) ([]config.ChannelStats, error) {
 		return nil, err
 	}
 	return statsList, nil
+}
+
+func VideosFromChannel(db *sql.DB, channelID string) ([]config.Video, error) {
+	var id int
+	err := db.QueryRow("SELECT id FROM channels WHERE channel_id = $1", channelID).Scan(&id)
+	if err != nil {
+		return nil, err
+	}
+
+	var videos []config.Video
+	rows, err := db.Query("SELECT * FROM videos WHERE channel_id = $1", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var video config.Video
+		if err := rows.Scan(
+			&video.ID,
+			&video.VideoID,
+			&video.IsShort,
+			&video.ChannelID,
+			&video.Title,
+			&video.Description,
+			&video.PublishedAt,
+			&video.ThumbnailURL,
+			&video.AddedAt,
+			&video.Frequency,
+		); err != nil {
+			return nil, err
+		}
+		videos = append(videos, video)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return videos, nil
 }
