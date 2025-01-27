@@ -126,7 +126,7 @@ func addChannel(c *gin.Context) {
 	form := url.Values{}
 	form.Add("hub.mode", "subscribe")
 	form.Add("hub.topic", topicURL)
-	form.Add("hub.callback", "https://ytst.flgr.fr/youtube/callback")
+	form.Add("hub.callback", "https://ytst-back.flgr.fr/youtube/callback")
 	form.Add("hub.lease_seconds", "864000")
 	form.Add("hub.verify", "async")
 	form.Add("hub.verify_token", "un_token_secret")

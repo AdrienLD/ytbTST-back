@@ -7,7 +7,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-var WebsiteAccess string = "http://localhost:3000"
+var WebsiteAccess string = "https://ytst.flgr.fr"
 
 func Load() (*Config, error) {
 	// Charger le fichier .env, si présent
