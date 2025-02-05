@@ -166,7 +166,7 @@ func VideoStats(db *sql.DB, videoID string) ([]config.VideoStats, error) {
 	}
 
 	var statsList []config.VideoStats
-	rows, err := db.Query("SELECT * FROM video_stats WHERE video_id = $1", id)
+	rows, err := db.Query("SELECT * FROM video_stats WHERE video_id = $1 ORDER BY recorded_at ASC", id)
 	if err != nil {
 		return nil, err
 	}

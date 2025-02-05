@@ -17,6 +17,7 @@ func PeriodicallyCalledRoutes(db *sql.DB) {
 	fmt.Println("Appels périodiques des routes...")
 	callRoutePeriodically(updateAllChannelStats, 24*time.Hour, db)
 	//callRoutePeriodically(autoCheckNewVideos, 2*time.Hour, db)
+	refreshWithFrequency(db, 2*time.Hour)
 	callRoutePeriodically(refreshWithFrequency, 2*time.Hour, db)
 }
 
