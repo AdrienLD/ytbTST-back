@@ -294,31 +294,38 @@ func isShort(videoId string) bool {
 	}
 
 	duration := videoContentDetails.Items[0].ContentDetails.Duration
-	re := regexp.MustCompile(`PT(?:(\d+)M)?(?:(\d+)S)?`)
+	re := regexp.MustCompile(`PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?`)
 	matches := re.FindStringSubmatch(duration)
 	if len(matches) == 0 {
 		fmt.Printf("Durée non reconnue pour la vidéo ID %s : %s\n", videoId, duration)
 		return false
 	}
 
-	minutesInt, secondsInt := 0, 0
+	heuresInt, minutesInt, secondsInt := 0, 0, 0
 	if matches[1] != "" {
-		minutesInt, err = strconv.Atoi(matches[1])
+		heuresInt, err = strconv.Atoi(matches[1])
+		if err != nil {
+			fmt.Printf("Erreur lors de la conversion des heures : %v\n", err)
+			return false
+		}
+	}
+	if matches[1] != "" {
+		minutesInt, err = strconv.Atoi(matches[2])
 		if err != nil {
 			fmt.Printf("Erreur lors de la conversion des minutes : %v\n", err)
 			return false
 		}
 	}
 	if matches[2] != "" {
-		secondsInt, err = strconv.Atoi(matches[2])
+		secondsInt, err = strconv.Atoi(matches[3])
 		if err != nil {
 			fmt.Printf("Erreur lors de la conversion des secondes : %v\n", err)
 			return false
 		}
 	}
 
-	fmt.Printf("minutes et secondes %d %d\n", minutesInt, secondsInt)
-	if minutesInt < 1 && secondsInt <= 60 {
+	fmt.Printf("heures minutes et secondes %d %d %d\n", heuresInt, minutesInt, secondsInt)
+	if minutesInt <= 1 && secondsInt <= 60 {
 		return true
 	}
 	return false
