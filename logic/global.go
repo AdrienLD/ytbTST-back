@@ -17,7 +17,6 @@ func PeriodicallyCalledRoutes(db *sql.DB) {
 	fmt.Println("Appels périodiques des routes...")
 	callRoutePeriodically(updateAllChannelStats, 24*time.Hour, db)
 	//callRoutePeriodically(autoCheckNewVideos, 2*time.Hour, db)
-	refreshWithFrequency(db, 2*time.Hour)
 	callRoutePeriodically(refreshWithFrequency, 2*time.Hour, db)
 }
 
@@ -309,14 +308,14 @@ func isShort(videoId string) bool {
 			return false
 		}
 	}
-	if matches[1] != "" {
+	if matches[2] != "" {
 		minutesInt, err = strconv.Atoi(matches[2])
 		if err != nil {
 			fmt.Printf("Erreur lors de la conversion des minutes : %v\n", err)
 			return false
 		}
 	}
-	if matches[2] != "" {
+	if matches[3] != "" {
 		secondsInt, err = strconv.Atoi(matches[3])
 		if err != nil {
 			fmt.Printf("Erreur lors de la conversion des secondes : %v\n", err)
