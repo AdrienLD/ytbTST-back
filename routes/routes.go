@@ -5,8 +5,11 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"time"
 	"ytst-back/config"
 	"ytst-back/db"
 	"ytst-back/logic"
@@ -15,6 +18,7 @@ import (
 )
 
 var dbConn *sql.DB
+var callbackURL = "https://ytst-back.flgr.fr/youtube/callback"
 
 func SetupRoutes(db *sql.DB) *gin.Engine {
 	router := gin.Default()
@@ -33,7 +37,7 @@ func SetupRoutes(db *sql.DB) *gin.Engine {
 		c.Next()
 	})
 	router.GET("/ytbtst/research", ytstResearch)
-	router.POST("/ytbtst/addChannel", addChannel)
+	router.POST("/ytbtst/addChannel", keepSubscriptionAlive)
 	// router.GET("/ytbtst/checkNewVideos", checkNewVideos)
 	router.GET("/youtube/callback", handleYouTubeHubChallenge)
 	router.POST("/youtube/callback", handleYouTubeNotification)
@@ -104,7 +108,34 @@ func handleYouTubeNotification(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-func addChannel(c *gin.Context) {
+func addChannel(channelId string) error {
+
+	hubURL := "https://pubsubhubbub.appspot.com/subscribe"
+
+	topicURL := "https://www.youtube.com/xml/feeds/videos.xml?channel_id=" + channelId
+
+	form := url.Values{}
+	form.Add("hub.mode", "subscribe")
+	form.Add("hub.topic", topicURL)
+	form.Add("hub.callback", callbackURL)
+	form.Add("hub.lease_seconds", "864000")
+	form.Add("hub.verify", "async")
+	form.Add("hub.verify_token", os.Getenv("YTBToken"))
+
+	resp, err := http.PostForm(hubURL, form)
+	if err != nil {
+		return fmt.Errorf("erreur subscribe: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status: %d, body: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
+func keepSubscriptionAlive(c *gin.Context) {
 	var req config.AddChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -114,33 +145,29 @@ func addChannel(c *gin.Context) {
 	channelId := req.ChannelID
 	fmt.Println("channelId", channelId)
 	err := logic.AddChannel(dbConn, channelId)
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	hubURL := "https://pubsubhubbub.appspot.com/subscribe"
-
-	topicURL := "https://www.youtube.com/xml/feeds/videos.xml?channel_id=" + channelId
-
-	form := url.Values{}
-	form.Add("hub.mode", "subscribe")
-	form.Add("hub.topic", topicURL)
-	form.Add("hub.callback", "https://ytst-back.flgr.fr/youtube/callback")
-	form.Add("hub.lease_seconds", "864000")
-	form.Add("hub.verify", "async")
-	form.Add("hub.verify_token", "un_token_secret")
-
-	resp, err := http.PostForm(hubURL, form)
+	err = addChannel(channelId)
 	if err != nil {
-		fmt.Errorf("erreur subscribe: %v", err)
+		log.Printf("Erreur initiale d'abonnement: %v", err)
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Errorf("status: %d, body: %s", resp.StatusCode, body)
-	}
+	ticker := time.NewTicker(864000*time.Second - 24*time.Hour)
+	go func() {
+		for {
+			<-ticker.C
+			err := addChannel(channelId)
+			if err != nil {
+				log.Printf("Erreur de renouvellement d'abonnement: %v", err)
+			} else {
+				log.Printf("Renouvellement d'abonnement OK pour la chaîne: %s", channelId)
+			}
+		}
+	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Abonnement en cours"})
 }

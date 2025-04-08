@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"ytst-back/config"
-
-	_ "github.com/lib/pq"
 )
 
 func Connect(cfg *config.Config) (*sql.DB, error) {

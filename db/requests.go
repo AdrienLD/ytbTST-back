@@ -5,7 +5,6 @@ import (
 	"ytst-back/config"
 
 	"github.com/lib/pq"
-	_ "github.com/lib/pq"
 )
 
 func AreChannelsInBDD(db *sql.DB, channelIDs []string) (map[string]bool, error) {
