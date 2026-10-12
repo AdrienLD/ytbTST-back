@@ -18,6 +18,37 @@ func PeriodicallyCalledRoutes(db *sql.DB) {
 	callRoutePeriodically(updateAllChannelStats, 24*time.Hour, db)
 	//callRoutePeriodically(autoCheckNewVideos, 2*time.Hour, db)
 	callRoutePeriodically(refreshWithFrequency, 2*time.Hour, db)
+
+	// Les abonnements PubSubHubbub ne survivent pas à un redémarrage : on les renouvelle tous au démarrage, puis avant chaque expiration du bail
+	go RenewAllSubscriptions(db, youtube.RenewInterval)
+	callRoutePeriodically(RenewAllSubscriptions, youtube.RenewInterval, db)
+}
+
+func RenewAllSubscriptions(db *sql.DB, _ time.Duration) {
+	rows, err := db.Query(`SELECT channel_id FROM channels`)
+	if err != nil {
+		log.Printf("Erreur lors de la récupération des chaînes pour le renouvellement : %v", err)
+		return
+	}
+
+	var channelIDs []string
+	for rows.Next() {
+		var channelID string
+		if err := rows.Scan(&channelID); err != nil {
+			log.Printf("Erreur lors de la lecture de la chaîne : %v", err)
+			continue
+		}
+		channelIDs = append(channelIDs, channelID)
+	}
+	rows.Close()
+
+	for _, channelID := range channelIDs {
+		if err := youtube.SubscribeToChannel(channelID); err != nil {
+			log.Printf("Erreur de renouvellement d'abonnement pour la chaîne %s : %v", channelID, err)
+		} else {
+			log.Printf("Renouvellement d'abonnement OK pour la chaîne : %s", channelID)
+		}
+	}
 }
 
 func mapToStruct(data interface{}, result interface{}) error {
@@ -116,13 +147,14 @@ func AddChannel(db *sql.DB, channelId string) error {
 		bestThumbnail = channel.Snippet.Thumbnails.Default.URL
 	}
 
-	_, err = db.Query(query, channel.ID, snippet.Title, snippet.Description, bestThumbnail, snippet.Country, snippet.CustomURL, snippet.CreatedDate)
+	var id int
+	err = db.QueryRow(query, channel.ID, snippet.Title, snippet.Description, bestThumbnail, snippet.Country, snippet.CustomURL, snippet.CreatedDate).Scan(&id)
 	if err != nil {
 		fmt.Printf("Erreur lors de l'insertion en base de données : %v\n", err)
 		return fmt.Errorf("Erreur lors de l'insertion en base de données : %v", err)
 	}
 
-	fmt.Printf("Chaîne ajoutée avec succès pour channel_id '%s' avec l'ID '%s'.\n", channelId)
+	fmt.Printf("Chaîne ajoutée avec succès pour channel_id '%s' avec l'ID '%d'.\n", channelId, id)
 	refreshChannelStats(db, channel.ID)
 
 	return nil
@@ -181,7 +213,8 @@ func updateAllChannelStats(db *sql.DB, _ time.Duration) {
 	fmt.Println("Mise à jour des statistiques de toutes les chaînes...")
 	rows, err := db.Query(`SELECT channel_id FROM channels`)
 	if err != nil {
-		log.Fatalf("Erreur lors de la récupération des chaînes : %v", err)
+		log.Printf("Erreur lors de la récupération des chaînes : %v", err)
+		return
 	}
 	defer rows.Close()
 
@@ -339,8 +372,11 @@ func refreshWithFrequency(db *sql.DB, frequency time.Duration) {
 
 	rows, err := db.Query(query, interval)
 	if err != nil {
-		log.Fatalf("Erreur lors de la récupération des vidéos : %v", err)
+		log.Printf("Erreur lors de la récupération des vidéos : %v", err)
+		return
 	}
+	defer rows.Close()
+
 	for rows.Next() {
 		var id string
 		var videoID string

@@ -7,18 +7,15 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
-	"os"
-	"time"
 	"ytst-back/config"
 	"ytst-back/db"
 	"ytst-back/logic"
+	"ytst-back/youtube"
 
 	"github.com/gin-gonic/gin"
 )
 
 var dbConn *sql.DB
-var callbackURL = "https://ytst-back.flgr.fr/youtube/callback"
 
 func SetupRoutes(db *sql.DB) *gin.Engine {
 	router := gin.Default()
@@ -108,33 +105,6 @@ func handleYouTubeNotification(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-func addChannel(channelId string) error {
-
-	hubURL := "https://pubsubhubbub.appspot.com/subscribe"
-
-	topicURL := "https://www.youtube.com/xml/feeds/videos.xml?channel_id=" + channelId
-
-	form := url.Values{}
-	form.Add("hub.mode", "subscribe")
-	form.Add("hub.topic", topicURL)
-	form.Add("hub.callback", callbackURL)
-	form.Add("hub.lease_seconds", "864000")
-	form.Add("hub.verify", "async")
-	form.Add("hub.verify_token", os.Getenv("YTBToken"))
-
-	resp, err := http.PostForm(hubURL, form)
-	if err != nil {
-		return fmt.Errorf("erreur subscribe: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("status: %d, body: %s", resp.StatusCode, body)
-	}
-	return nil
-}
-
 func keepSubscriptionAlive(c *gin.Context) {
 	var req config.AddChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -151,23 +121,11 @@ func keepSubscriptionAlive(c *gin.Context) {
 		return
 	}
 
-	err = addChannel(channelId)
+	// Le renouvellement est géré globalement par logic.RenewAllSubscriptions
+	err = youtube.SubscribeToChannel(channelId)
 	if err != nil {
 		log.Printf("Erreur initiale d'abonnement: %v", err)
 	}
-
-	ticker := time.NewTicker(864000*time.Second - 24*time.Hour)
-	go func() {
-		for {
-			<-ticker.C
-			err := addChannel(channelId)
-			if err != nil {
-				log.Printf("Erreur de renouvellement d'abonnement: %v", err)
-			} else {
-				log.Printf("Renouvellement d'abonnement OK pour la chaîne: %s", channelId)
-			}
-		}
-	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Abonnement en cours"})
 }
