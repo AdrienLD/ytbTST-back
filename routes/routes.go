@@ -3,6 +3,7 @@ package routes
 import (
 	"database/sql"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -91,14 +92,22 @@ func handleYouTubeNotification(c *gin.Context) {
 	}
 
 	if len(notification.Entry) == 0 {
-		fmt.Println("Aucune entrée reçue dans la notification YouTube")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No entries found in notification"})
+		// Cas d'une vidéo supprimée (<at:deleted-entry>) : on acquitte pour que le hub ne renvoie pas la notification
+		fmt.Println("Notification YouTube sans entrée (vidéo supprimée ?), ignorée")
+		c.Status(http.StatusOK)
 		return
 	}
 
-	err = logic.AddNewVideo(dbConn, notification.Entry[0].VideoId, notification.Entry[0].ChannelId)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// AddNewVideo est idempotent : en cas d'erreur, le hub peut renvoyer la notification sans créer de doublon
+	var lastErr error
+	for _, entry := range notification.Entry {
+		if err := logic.AddNewVideo(dbConn, entry.VideoId, entry.ChannelId); err != nil {
+			log.Printf("Erreur lors du traitement de la notification pour la vidéo %s : %v", entry.VideoId, err)
+			lastErr = err
+		}
+	}
+	if lastErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": lastErr.Error()})
 		return
 	}
 
@@ -130,15 +139,25 @@ func keepSubscriptionAlive(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Abonnement en cours"})
 }
 
+// respondDBError renvoie 404 si la ressource n'existe pas, 500 sinon
+func respondDBError(c *gin.Context, err error, notFoundMessage string) {
+	if errors.Is(err, sql.ErrNoRows) {
+		c.JSON(http.StatusNotFound, gin.H{"error": notFoundMessage})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+}
+
 func channelInfo(c *gin.Context) {
 	channelId := c.Query("channelId")
 	if channelId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'channelId' est requis"})
+		return
 	}
 
 	data, err := db.ChannelInfo(dbConn, channelId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondDBError(c, err, "Chaîne introuvable")
 		return
 	}
 
@@ -149,11 +168,12 @@ func channelStats(c *gin.Context) {
 	channelId := c.Query("channelId")
 	if channelId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'channelId' est requis"})
+		return
 	}
 
 	data, err := db.ChannelStats(dbConn, channelId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondDBError(c, err, "Chaîne introuvable")
 		return
 	}
 
@@ -164,11 +184,12 @@ func videosFromChannel(c *gin.Context) {
 	channelId := c.Query("channelId")
 	if channelId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'channelId' est requis"})
+		return
 	}
 
 	data, err := db.VideosFromChannel(dbConn, channelId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondDBError(c, err, "Chaîne introuvable")
 		return
 	}
 
@@ -179,11 +200,12 @@ func videoInfo(c *gin.Context) {
 	videoId := c.Query("videoId")
 	if videoId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'videoId' est requis"})
+		return
 	}
 
 	data, err := db.VideoInfo(dbConn, videoId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondDBError(c, err, "Vidéo introuvable")
 		return
 	}
 
@@ -194,11 +216,12 @@ func videoStats(c *gin.Context) {
 	videoId := c.Query("videoId")
 	if videoId == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Le paramètre 'videoId' est requis"})
+		return
 	}
 
 	data, err := db.VideoStats(dbConn, videoId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondDBError(c, err, "Vidéo introuvable")
 		return
 	}
 

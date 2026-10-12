@@ -69,7 +69,7 @@ func ChannelStats(db *sql.DB, channelID string) ([]config.ChannelStats, error) {
 	}
 
 	var statsList []config.ChannelStats
-	rows, err := db.Query("SELECT * FROM channel_stats WHERE channel_id = $1", id)
+	rows, err := db.Query("SELECT * FROM channel_stats WHERE channel_id = $1 ORDER BY recorded_at ASC", id)
 	if err != nil {
 		return nil, err
 	}

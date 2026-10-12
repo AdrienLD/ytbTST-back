@@ -81,15 +81,6 @@ type YouTubeVideoStats struct {
 	} `json:"items"`
 }
 
-type YouTubeVideoContentDetails struct {
-	Items []struct {
-		ID             string `json:"id"`
-		ContentDetails struct {
-			Duration string `json:"duration"`
-		} `json:"contentDetails"`
-	} `json:"items"`
-}
-
 type Feed struct {
 	Entry []struct {
 		ChannelId string `xml:"channelId" xml:"http://www.youtube.com/xml/schemas/2015 channelId"`
