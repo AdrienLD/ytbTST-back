@@ -2,6 +2,7 @@
 set -euo pipefail
 export PATH=/usr/local/go/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
 export GOTOOLCHAIN=local
+export GOMAXPROCS=1
 cd "$(dirname "$0")"
 test "$(hostname)" = ytst-back
 exec 9>"${YTST_DEPLOY_LOCK:-/run/lock/ytst-back-deploy.lock}"
