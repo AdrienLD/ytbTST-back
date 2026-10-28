@@ -1,0 +1,11 @@
+name: Déployer ytbTST-back
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+jobs:
+  deploy:
+    uses: fulgurmotors/deploy-action/.github/workflows/deploy.yml@v1
+    permissions:
+      id-token: write
+      contents: read
